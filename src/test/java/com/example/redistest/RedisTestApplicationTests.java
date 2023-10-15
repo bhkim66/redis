@@ -8,6 +8,8 @@ import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 
+import java.util.Optional;
+
 import static org.junit.jupiter.api.Assertions.assertAll;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 
@@ -24,28 +26,32 @@ class RedisTestApplicationTests {
 	@DisplayName("save")
 	@Test
 	void save() {
-		String userId = "bhkim";
-		String userName = "bh";
+		String userName = "bhkim";
 		String userHome = "seoul";
-		Long remainMs = 3000L;
-		UserAccessToken userAccessToken = UserAccessToken.createUserAccessToken(userId, userName, userHome, remainMs);
+		Long remainMs = 1000L;
+		UserAccessToken userAccessToken = UserAccessToken.createUserAccessToken(userName, userHome, remainMs);
 
 		userAccessRepository.save(userAccessToken);
 
-		UserAccessToken userToken = userAccessRepository.findById(userId).get();
+		Optional<UserAccessToken> userToken = userAccessRepository.findByUserName(userName);
 
 		assertAll(
-				() -> assertEquals(userId, userToken.getId()),
 				() -> assertEquals(userName, userToken.getUserName()),
 				() -> assertEquals(userHome, userToken.getUserHome()),
 				() -> assertEquals(remainMs/1000, userToken.getExpiration())
 		);
+		System.out.println("user id : " + userToken.getId());
+		System.out.println("user name : " + userToken.getUserName());
 
-		String userId2 = "bjkim";
-		String userName2 = "bj";
-		UserAccessToken userAccessToken2 = UserAccessToken.createUserAccessToken(userId2, userName2, userHome, remainMs);
+		String userName2 = "bjkim";
+		UserAccessToken userAccessToken2 = UserAccessToken.createUserAccessToken(userName2, userHome, remainMs);
 
 		userAccessRepository.save(userAccessToken2);
+
+		UserAccessToken userToken2 = userAccessRepository.findByUserName(userName2).get();
+
+		System.out.println("user id : " + userToken2.getId());
+		System.out.println("user name : " + userToken2.getUserName());
 
 	}
 

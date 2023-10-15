@@ -10,7 +10,6 @@ import org.springframework.data.redis.core.index.Indexed;
 
 @Getter
 @RedisHash("User")
-@AllArgsConstructor
 @Builder
 public class UserAccessToken {
 
@@ -24,9 +23,8 @@ public class UserAccessToken {
     @TimeToLive
     private Long expiration;
 
-    public static UserAccessToken createUserAccessToken(String id, String userName, String userHome, Long remainMs) {
+    public static UserAccessToken createUserAccessToken(String userName, String userHome, Long remainMs) {
         return UserAccessToken.builder()
-                .id(id)
                 .userName(userName)
                 .userHome(userHome)
                 .expiration(remainMs/1000)
