@@ -11,8 +11,11 @@ import lombok.ToString;
 @AllArgsConstructor
 @ToString
 public class TokenInfo {
+    private String userId;
     private String grantType;
     private String accessToken;
     private String refreshToken;
-    private Long refreshTokenExpirationTime;
+    private Long rtkExpirationTime;
+    private String rtkExpirationDate;
+    private String userIp;
 }

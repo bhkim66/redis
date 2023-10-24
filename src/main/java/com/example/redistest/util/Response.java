@@ -43,4 +43,14 @@ public class Response {
                 .build();
         return ResponseEntity.ok(body);
     }
+
+        public ResponseEntity<?> failed(String msg, HttpStatus status) {
+        Body body = Body.builder()
+                .state(status.value())
+                .result("failed")
+                .massage(msg)
+                .error(Collections.emptyList())
+                .build();
+        return ResponseEntity.ok(body);
+    }
 }

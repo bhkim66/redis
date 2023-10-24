@@ -1,5 +1,6 @@
 package com.example.redistest.controller;
 
+import com.example.redistest.common.ConstDef;
 import com.example.redistest.config.JwtTokenProvider;
 import com.example.redistest.dto.UserRequestDto;
 import com.example.redistest.entity.TokenInfo;
@@ -18,11 +19,7 @@ import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
-import java.util.Date;
-import java.util.HashMap;
-import java.util.Map;
-
-import static java.util.concurrent.TimeUnit.MILLISECONDS;
+import javax.servlet.http.HttpServletRequest;
 
 @RestController
 @RequestMapping("/auth")
@@ -40,9 +37,6 @@ public class AuthController {
     @Autowired
     RedisTemplate redisTemplate;
 
-    public static final long now = (new Date()).getTime();
-
-
     @GetMapping("/login")
     public ResponseEntity<?> login(@RequestBody UserRequestDto.Login login) {
         // 1. Login ID/PW 를 기반으로 Authentication 객체 생성
@@ -59,6 +53,7 @@ public class AuthController {
          try {
             authentication = authenticationManagerBuilder.getObject().authenticate(authenticationToken);
             log.info("authentication : {} " , authentication);
+            log.info("authentication getName : {} " , authentication.getName());
          } catch (BadCredentialsException e) {
              return response.success("실패 했습니다.", HttpStatus.NON_AUTHORITATIVE_INFORMATION);
          }
@@ -66,28 +61,40 @@ public class AuthController {
 
         // 3. 인증 정보를 기반으로 JWT 토큰 생성
         TokenInfo tokenInfo = jwtTokenProvider.generateToken(authentication);
-
         log.info("tokenInfo : {} " , tokenInfo);
 
-        //RefreshToken Redis 저장
-
-        Map<String, Object> map = new HashMap<>();
-        Date RTKExpiredDate = new Date(now + tokenInfo.getRefreshTokenExpirationTime());
-
-        map.put("userId", login.getMemId());
-        map.put("RTK", tokenInfo.getRefreshToken());
-        map.put("RTKExpirationTime", tokenInfo.getRefreshTokenExpirationTime().toString()) ;
-        map.put("RTKExpirationDate", RTKExpiredDate.toString());
-        map.put("userIp", "123.123.123.123");
-        map.put("connectChannel", "M");
-        log.info("map : {} " , map);
-
-        String userKey = "User:" + login.getMemId();
-        redisTemplate.opsForHash().putAll(userKey , map);
-        redisTemplate.expire(userKey , tokenInfo.getRefreshTokenExpirationTime(), MILLISECONDS);
-
+        jwtTokenProvider.insertRedis(tokenInfo, login.getConnectChannel());
 
         return response.success(tokenInfo, "로그인에 성공했습니다.", HttpStatus.OK);
+    }
+
+    @GetMapping("/reissue-access")
+    public ResponseEntity<?> getAccessToken(HttpServletRequest request) {
+        String token = jwtTokenProvider.resolveToken(request, ConstDef.REFRESH_AUTHORIZATION_HEADER);
+        log.info("jwtTokenProvider.validateToken(token) : {} ", jwtTokenProvider.validateToken(token));
+        if (token != null && jwtTokenProvider.validateToken(token)) {
+            //3. 저장된 refresh token 찾기
+            TokenInfo tokenInfo = (TokenInfo) redisTemplate.opsForHash().entries(ConstDef.REDIS_KEY_PREFIX + jwtTokenProvider.getUserIdFromJWT(token));
+            log.info("tokenInfo : {} ", tokenInfo);
+//            if (refreshToken != null) {
+//                //4. 최초 로그인한 ip 와 같은지 확인 (처리 방식에 따라 재발급을 하지 않거나 메일 등의 알림을 주는 방법이 있음)
+//                String currentIpAddress = Helper.getClientIp(request);
+//                if (refreshToken.getIp().equals(currentIpAddress)) {
+//                    // 5. Redis 에 저장된 RefreshToken 정보를 기반으로 JWT Token 생성
+//                    UserResponseDto.TokenInfo tokenInfo = jwtTokenProvider.generateToken(refreshToken.getId(), refreshToken.getAuthorities());
+//
+//                    // 6. Redis RefreshToken update
+//                    refreshTokenRedisRepository.save(RefreshToken.builder()
+//                            .id(refreshToken.getId())
+//                            .ip(currentIpAddress)
+//                            .authorities(refreshToken.getAuthorities())
+//                            .refreshToken(tokenInfo.getRefreshToken())
+//                            .build());
+//                    return response.success(tokenInfo);
+//                }
+//            }
+        }
+        return response.success("test!!", HttpStatus.OK);
     }
 
     @GetMapping("/token-test")

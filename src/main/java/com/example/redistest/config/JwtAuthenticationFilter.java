@@ -1,63 +1,68 @@
 package com.example.redistest.config;
 
+import com.example.redistest.common.ConstDef;
+import com.example.redistest.exception.JwtTokenException;
+import io.jsonwebtoken.ExpiredJwtException;
+import io.jsonwebtoken.JwtException;
+import io.jsonwebtoken.security.SignatureException;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.data.redis.RedisConnectionFailureException;
 import org.springframework.data.redis.core.RedisTemplate;
 import org.springframework.security.core.Authentication;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.util.ObjectUtils;
-import org.springframework.util.StringUtils;
-import org.springframework.web.filter.GenericFilterBean;
+import org.springframework.web.filter.OncePerRequestFilter;
 
 import javax.servlet.FilterChain;
 import javax.servlet.ServletException;
 import javax.servlet.ServletRequest;
 import javax.servlet.ServletResponse;
 import javax.servlet.http.HttpServletRequest;
+import javax.servlet.http.HttpServletResponse;
 import java.io.IOException;
 
 @Slf4j
 @RequiredArgsConstructor
-public class JwtAuthenticationFilter extends GenericFilterBean {
-
-    private static final String AUTHORIZATION_HEADER = "Authorization";
+public class JwtAuthenticationFilter extends OncePerRequestFilter {
     private static final String BEARER_TYPE = "Bearer";
 
     private final JwtTokenProvider jwtTokenProvider;
+
     private final RedisTemplate redisTemplate;
 
     @Override
-    public void doFilter(ServletRequest request, ServletResponse response, FilterChain chain) throws IOException, ServletException {
+    protected void doFilterInternal(HttpServletRequest request, HttpServletResponse response, FilterChain filterChain) throws ServletException, IOException {
+        log.info("@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@");
         log.info("INTO doFilter");
         // 1. Request Header 에서 JWT 토큰 추출
-        String token = resolveToken((HttpServletRequest) request);
+        String token = jwtTokenProvider.resolveToken(request, ConstDef.ACCESS_AUTHORIZATION_HEADER);
+        String connectChannel = request.getParameter("connectChannel");
+        String userId = request.getParameter("userId");
         log.info("token {} " , token);
+        log.info("request {} " , request);
 
+        // Redis 에 해당 accessToken logout 여부 확인
         // 2. validateToken 으로 토큰 유효성 검사
-        if (token != null && jwtTokenProvider.validateToken(token)) {
-            // (추가) Redis 에 해당 accessToken logout 여부 확인
-            String isLogout = (String)redisTemplate.opsForValue().get(token);
-            log.info("isLogout {} " , isLogout);
-            if (ObjectUtils.isEmpty(isLogout)) {
-                log.info("isLogout @@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@ ");
+        try {
+            if(token == null) {
+                // Redis 에 해당 계정정보 존재 여부 확인
+                log.info("connectChannel {} " , connectChannel);
+                String loginUser = (String)redisTemplate.opsForHash().get(connectChannel + ConstDef.REDIS_KEY_PREFIX + userId, "userId" );
+                log.info("loginUser {} " , loginUser);
+                // 유저가 있는거 까지 확인 사후처리 요망
+            }
+            if (token != null && jwtTokenProvider.validateToken(token)) {
                 // 토큰이 유효할 경우 토큰에서 Authentication 객체를 가지고 와서 SecurityContext 에 저장
                 Authentication authentication = jwtTokenProvider.getAuthentication(token);
-                log.info("authentication  :  {}" , authentication);
                 SecurityContextHolder.getContext().setAuthentication(authentication);
             }
+        } catch(JwtException e) {
+            throw new JwtException("Invaild Token");
+        } catch (RedisConnectionFailureException e) {
+            SecurityContextHolder.clearContext();
+            throw new RedisConnectionFailureException("bad error");
         }
-        chain.doFilter(request, response);
-    }
-
-    // Request Header 에서 토큰 정보 추출
-    private String resolveToken(HttpServletRequest request) {
-        log.info("INTO resolveToken");
-        log.info("request {} : " , request);
-        String bearerToken = request.getHeader(AUTHORIZATION_HEADER);
-        log.info("bearerToken {} : " , bearerToken);
-        if (StringUtils.hasText(bearerToken) && bearerToken.startsWith(BEARER_TYPE)) {
-            return bearerToken.substring(7);
-        }
-        return null;
+        filterChain.doFilter(request, response);
     }
 }

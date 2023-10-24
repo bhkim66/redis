@@ -29,6 +29,8 @@ public class WebSecurityConfig {
 
     private final JwtAuthenticationEntryPoint unauthorizedHandler;
 
+    private final JwtExceptionFilter jwtExceptionFilter;
+
     private final String[] RESOURCE_PATH = new String[] {
     		"/js/**"
 			 , "/css/**"
@@ -41,37 +43,58 @@ public class WebSecurityConfig {
 			 , "/favicon.ico"
      };
 
-    @Bean
-    @Order(0)
-    public SecurityFilterChain resources(HttpSecurity http) throws Exception {
-      return http.requestMatchers(matchers -> matchers.antMatchers(RESOURCE_PATH))
-    		  .authorizeHttpRequests(authorize -> authorize.anyRequest().permitAll())
-    		  .requestCache(RequestCacheConfigurer::disable)
-    		  .securityContext(AbstractHttpConfigurer::disable)
-    		  .sessionManagement(AbstractHttpConfigurer::disable)
-    		  .build();
-    }
+//    @Bean
+//    @Order(0)
+//    public SecurityFilterChain resources(HttpSecurity http) throws Exception {
+//      return http.requestMatchers(matchers -> matchers.antMatchers(RESOURCE_PATH))
+//    		  .authorizeHttpRequests(authorize -> authorize.anyRequest().permitAll())
+//    		  .requestCache(RequestCacheConfigurer::disable)
+//    		  .securityContext(AbstractHttpConfigurer::disable)
+//    		  .sessionManagement(AbstractHttpConfigurer::disable)
+//    		  .build();
+//    }
 
     @Bean
     public SecurityFilterChain securityFilterChain(HttpSecurity http) throws Exception {
-        return http.csrf().disable()
-                .exceptionHandling().authenticationEntryPoint(unauthorizedHandler)
+        return http
+                    .csrf().disable()
+                    .headers().frameOptions().disable()
                 .and()
-                .headers().frameOptions().disable()
+                    .cors().configurationSource(corsConfigurationSource())
                 .and()
-                .cors().configurationSource(corsConfigurationSource())
+                    .sessionManagement().sessionCreationPolicy(SessionCreationPolicy.STATELESS)
                 .and()
-                .sessionManagement().sessionCreationPolicy(SessionCreationPolicy.STATELESS)
+                    .authorizeRequests()
+                        .antMatchers("/order/cancel", "/payment/api/refundUrl", "/").permitAll()
+                        .antMatchers("/mypage/**", "/order/**", "/payment/**", "/auth/token-test").authenticated()
+                        .anyRequest().permitAll()
                 .and()
-                .authorizeRequests()
-                    .antMatchers("/order/cancel", "/payment/api/refundUrl", "/").permitAll()
-                    .antMatchers("/mypage/**", "/order/**", "/payment/**", "/auth/test").authenticated()
-                    .anyRequest().permitAll()
+                     .exceptionHandling().authenticationEntryPoint(new JwtAuthenticationEntryPoint())
                 .and()
-                .formLogin().disable()
-                .addFilterBefore(new JwtAuthenticationFilter(this.jwtTokenProvider, this.redisTemplate), UsernamePasswordAuthenticationFilter.class)
+                    .formLogin().disable()
+                    .addFilterBefore(new JwtAuthenticationFilter(jwtTokenProvider, redisTemplate), UsernamePasswordAuthenticationFilter.class)
+                    .addFilterBefore(jwtExceptionFilter, JwtAuthenticationFilter.class)
                 .build();
     }
+//
+//      protected void configure(HttpSecurity http) throws Exception {
+//
+//          http.csrf().disable();
+//          http.httpBasic().disable()
+//                  .authorizeRequests()// 요청에 대한 사용권한 체크
+//                  .antMatchers("/auth/test").authenticated()
+//                  .antMatchers("/**").permitAll()
+//                  .and()
+//                  .cors()
+//                  .and()
+//                  .exceptionHandling()
+//                  .authenticationEntryPoint(unauthorizedHandler)
+//                  .and()
+//                  .addFilterBefore(new JwtAuthenticationFilter(this.jwtTokenProvider, this.redisTemplate),
+//                          UsernamePasswordAuthenticationFilter.class)
+//                  .addFilterBefore(new JwtExceptionFilter(), JwtAuthenticationFilter.class);
+//
+//      }
 
     @Bean
     public CorsConfigurationSource corsConfigurationSource() {
