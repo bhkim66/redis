@@ -38,11 +38,15 @@ public class AuthController {
     RedisTemplate redisTemplate;
 
     @GetMapping("/login")
-    public ResponseEntity<?> login(@RequestBody UserRequestDto.Login login) {
+    public ResponseEntity<?> login(@RequestBody UserRequestDto.Login login, HttpServletRequest request) {
         // 1. Login ID/PW 를 기반으로 Authentication 객체 생성
         // 이때 authentication 는 인증 여부를 확인하는 authenticated 값이 false
         log.info("login : {} " , login);
+        String connectChannel = request.getParameter("connectChannel");
+
         UsernamePasswordAuthenticationToken authenticationToken = login.toAuthentication();
+
+
 
         log.info("authenticationToken : {} " , authenticationToken);
 
@@ -62,8 +66,9 @@ public class AuthController {
         // 3. 인증 정보를 기반으로 JWT 토큰 생성
         TokenInfo tokenInfo = jwtTokenProvider.generateToken(authentication);
         log.info("tokenInfo : {} " , tokenInfo);
+        log.info("connectChannel : {} " , connectChannel);
 
-        jwtTokenProvider.insertRedis(tokenInfo, login.getConnectChannel());
+        jwtTokenProvider.insertRedis(tokenInfo, connectChannel);
 
         return response.success(tokenInfo, "로그인에 성공했습니다.", HttpStatus.OK);
     }
