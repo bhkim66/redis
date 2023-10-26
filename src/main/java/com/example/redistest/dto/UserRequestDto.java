@@ -25,15 +25,18 @@ public final class UserRequestDto {
 
     @Getter
     @Setter
+    @ToString
     public static class Login {
-        @NotEmpty(message = "이메일은 필수 입력값입니다.")
-        private String memId;
+        @NotEmpty(message = "아이디는 필수 입력값입니다.")
+        private String userId;
 
         @NotEmpty(message = "비밀번호는 필수 입력값입니다.")
         private String password;
 
+        private String connectChannel;
+
         public UsernamePasswordAuthenticationToken toAuthentication() {
-            return new UsernamePasswordAuthenticationToken(memId, password);
+            return new UsernamePasswordAuthenticationToken(userId, password);
         }
     }
 

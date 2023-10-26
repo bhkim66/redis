@@ -24,33 +24,29 @@ public class Response {
     }
 
     public ResponseEntity<?> success(Object data, String msg, HttpStatus status) {
-        Body body = Body.builder()
+        return ResponseEntity.ok(Body.builder()
                 .state(status.value())
                 .data(data)
                 .result("success")
                 .massage(msg)
                 .error(Collections.emptyList())
-                .build();
-        return ResponseEntity.ok(body);
+                .build());
     }
 
     public ResponseEntity<?> success(String msg, HttpStatus status) {
-        Body body = Body.builder()
+        return ResponseEntity.ok(Body.builder()
                 .state(status.value())
                 .result("success")
                 .massage(msg)
                 .error(Collections.emptyList())
-                .build();
-        return ResponseEntity.ok(body);
+                .build());
     }
-
-        public ResponseEntity<?> failed(String msg, HttpStatus status) {
-        Body body = Body.builder()
+    public ResponseEntity<?> failed(String msg, HttpStatus status) {
+        return ResponseEntity.ok(Body.builder()
                 .state(status.value())
                 .result("failed")
                 .massage(msg)
                 .error(Collections.emptyList())
-                .build();
-        return ResponseEntity.ok(body);
+                .build());
     }
 }

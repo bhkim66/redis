@@ -17,6 +17,10 @@ public enum ExceptionEnum {
     INTERNAL_SERVER_ERROR(HttpStatus.INTERNAL_SERVER_ERROR, "E041", "서버 오류가 발생했습니다. 잠시 후 다시 시도해주세요."),
 
     USER_LOGIN_DUPLICATION(HttpStatus.UNAUTHORIZED, "E091", "이미 로그인 되어있는 계정입니다."),
+
+    REDIS_USER_NOT_EXIST(HttpStatus.UNAUTHORIZED, "E092", "RTK가 만료 되었거나 유효하지 않는 값입니다."),
+
+    USER_NOT_FOUND(HttpStatus.UNAUTHORIZED, "E090", "존재하지 않는 계정입니다."),
     ;
 
 

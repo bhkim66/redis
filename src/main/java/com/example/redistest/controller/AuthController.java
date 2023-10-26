@@ -4,7 +4,9 @@ import com.example.redistest.common.ConstDef;
 import com.example.redistest.config.JwtTokenProvider;
 import com.example.redistest.dto.UserRequestDto;
 import com.example.redistest.entity.TokenInfo;
+import com.example.redistest.exception.ApiException;
 import com.example.redistest.util.Response;
+import com.example.redistest.util.StringUtil;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.data.redis.core.RedisTemplate;
@@ -14,12 +16,16 @@ import org.springframework.security.authentication.BadCredentialsException;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.security.config.annotation.authentication.builders.AuthenticationManagerBuilder;
 import org.springframework.security.core.Authentication;
+import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
 import javax.servlet.http.HttpServletRequest;
+
+import static com.example.redistest.entity.ExceptionEnum.REDIS_USER_NOT_EXIST;
+import static com.example.redistest.entity.ExceptionEnum.USER_LOGIN_DUPLICATION;
 
 @RestController
 @RequestMapping("/auth")
@@ -52,52 +58,46 @@ public class AuthController {
 
         // 2. 실제 검증 (사용자 비밀번호 체크)이 이루어지는 부분
         // authenticate 매서드가 실행될 때 CustomUserDetailsService 에서 만든 loadUserByUsername 메서드가 실행
-         Authentication authentication = null;
+        Authentication authentication = null;
 
-         try {
+        try {
             authentication = authenticationManagerBuilder.getObject().authenticate(authenticationToken);
             log.info("authentication : {} " , authentication);
             log.info("authentication getName : {} " , authentication.getName());
-         } catch (BadCredentialsException e) {
-             return response.success("실패 했습니다.", HttpStatus.NON_AUTHORITATIVE_INFORMATION);
-         }
-         log.info("authentication : {} " , authentication);
+        } catch (BadCredentialsException e) {
+            return response.failed("계정 정보가 올바르지 않습니다.", HttpStatus.UNAUTHORIZED);
+        }
+        log.info("authentication : {} " , authentication);
+        if(checkRedis(login)) {
+            // 3. 인증 정보를 기반으로 JWT 토큰 생성
+            TokenInfo tokenInfo = jwtTokenProvider.generateToken(authentication);
+            log.info("tokenInfo : {} " , tokenInfo);
+            log.info("connectChannel : {} " , connectChannel);
 
-        // 3. 인증 정보를 기반으로 JWT 토큰 생성
-        TokenInfo tokenInfo = jwtTokenProvider.generateToken(authentication);
-        log.info("tokenInfo : {} " , tokenInfo);
-        log.info("connectChannel : {} " , connectChannel);
-
-        jwtTokenProvider.insertRedis(tokenInfo, connectChannel);
-
-        return response.success(tokenInfo, "로그인에 성공했습니다.", HttpStatus.OK);
+            jwtTokenProvider.insertRedis(tokenInfo, connectChannel);
+            return response.success(tokenInfo, "로그인에 성공했습니다.", HttpStatus.OK);
+        }
+        return response.failed("오류 발생. 관리자에게 문의바랍니다.", HttpStatus.INTERNAL_SERVER_ERROR);
     }
 
     @GetMapping("/reissue-access")
-    public ResponseEntity<?> getAccessToken(HttpServletRequest request) {
-        String token = jwtTokenProvider.resolveToken(request, ConstDef.REFRESH_AUTHORIZATION_HEADER);
-        log.info("jwtTokenProvider.validateToken(token) : {} ", jwtTokenProvider.validateToken(token));
+    public ResponseEntity<?> getAccessToken(HttpServletRequest req) {
+        String token = jwtTokenProvider.resolveToken(req, ConstDef.REFRESH_AUTHORIZATION_HEADER);
+        String connectChannel = req.getParameter("connectChannel");
+        log.info("reissu token : {} ", token);
+        String userId = jwtTokenProvider.getUserIdFromJWT(token);
+        String redisUserKey = connectChannel + ConstDef.REDIS_KEY_PREFIX + userId;
+        log.info("redisUserKey : {}", redisUserKey);
+
+        String refreshToken = (String) redisTemplate.opsForHash().get(redisUserKey, "refreshToken");
+        //RTK 만료 다시 로그인 필요
+        if (StringUtil.isEmpty(refreshToken)) {
+            SecurityContextHolder.clearContext();
+            throw new ApiException(REDIS_USER_NOT_EXIST);
+        }
+
         if (token != null && jwtTokenProvider.validateToken(token)) {
-            //3. 저장된 refresh token 찾기
-            TokenInfo tokenInfo = (TokenInfo) redisTemplate.opsForHash().entries(ConstDef.REDIS_KEY_PREFIX + jwtTokenProvider.getUserIdFromJWT(token));
-            log.info("tokenInfo : {} ", tokenInfo);
-//            if (refreshToken != null) {
-//                //4. 최초 로그인한 ip 와 같은지 확인 (처리 방식에 따라 재발급을 하지 않거나 메일 등의 알림을 주는 방법이 있음)
-//                String currentIpAddress = Helper.getClientIp(request);
-//                if (refreshToken.getIp().equals(currentIpAddress)) {
-//                    // 5. Redis 에 저장된 RefreshToken 정보를 기반으로 JWT Token 생성
-//                    UserResponseDto.TokenInfo tokenInfo = jwtTokenProvider.generateToken(refreshToken.getId(), refreshToken.getAuthorities());
-//
-//                    // 6. Redis RefreshToken update
-//                    refreshTokenRedisRepository.save(RefreshToken.builder()
-//                            .id(refreshToken.getId())
-//                            .ip(currentIpAddress)
-//                            .authorities(refreshToken.getAuthorities())
-//                            .refreshToken(tokenInfo.getRefreshToken())
-//                            .build());
-//                    return response.success(tokenInfo);
-//                }
-//            }
+
         }
         return response.success("test!!", HttpStatus.OK);
     }
@@ -105,6 +105,20 @@ public class AuthController {
     @GetMapping("/token-test")
     public ResponseEntity<?> test() {
        return response.success("토큰 인증 성공했습니다.", HttpStatus.OK);
+    }
+
+    private boolean checkRedis(UserRequestDto.Login login) {
+        log.info("checkRedis()");
+        log.info("login {} " , login);
+        String userKey = login.getConnectChannel() + ConstDef.REDIS_KEY_PREFIX + login.getUserId();
+        String loginUser = (String)redisTemplate.opsForHash().get(userKey, "userId" );
+        String loginUserIp = (String)redisTemplate.opsForHash().get(userKey, "userIp" );
+        log.info("loginUser {} " , loginUser);
+        // 유저가 있는거 까지 확인 사후처리 요망
+        if(!StringUtil.isEmpty(loginUser)) {
+            throw new ApiException(USER_LOGIN_DUPLICATION);
+        }
+        return true;
     }
 
 }
