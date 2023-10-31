@@ -19,6 +19,7 @@ import org.springframework.stereotype.Component;
 import org.springframework.util.StringUtils;
 
 import javax.servlet.http.HttpServletRequest;
+import javax.servlet.http.HttpServletResponse;
 import java.security.Key;
 import java.util.*;
 import java.util.stream.Collectors;
@@ -28,7 +29,6 @@ import static java.util.concurrent.TimeUnit.MILLISECONDS;
 @Slf4j
 @Component
 public class JwtTokenProvider {
-    public static final long now = (new Date()).getTime();
     private static final String AUTHORITIES_KEY = "auth";
     private static final String BEARER_TYPE = "Bearer";
     private static final long ACCESS_TOKEN_EXPIRE_TIME = 60 * 1000L;              // 30분
@@ -45,30 +45,32 @@ public class JwtTokenProvider {
     }
 
     // 유저 정보를 가지고 AccessToken, RefreshToken 을 생성하는 메서드
-    public TokenInfo generateToken(Authentication authentication) {
+    public TokenInfo generateToken(String userId) {
          log.info("INTO generateToken");
-         log.info("authentication {} " , authentication);
         // 권한 가져오기@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@
         String authorities = "M";
 
         // Access Token 생성
-        Date accessTokenExpiresIn = new Date(now + ACCESS_TOKEN_EXPIRE_TIME);
+        Date accessTokenExpiresIn = new Date((new Date()).getTime() + ACCESS_TOKEN_EXPIRE_TIME);
+        log.info("accessTokenExpiresIn : {} ", accessTokenExpiresIn);
         String accessToken = Jwts.builder()
-                .setSubject(authentication.getName())
+                .setSubject(userId)
                 .claim(AUTHORITIES_KEY, authorities)
                 .setExpiration(accessTokenExpiresIn)
                 .signWith(key, SignatureAlgorithm.HS256)
                 .compact();
 
         // Refresh Token 생성
-        Date refreshTokenExpiresIn = new Date(now + REFRESH_TOKEN_EXPIRE_TIME);
+        Date refreshTokenExpiresIn = new Date((new Date()).getTime() + REFRESH_TOKEN_EXPIRE_TIME);
+        log.info("refreshTokenExpiresIn : {} ", refreshTokenExpiresIn);
         String refreshToken = Jwts.builder()
+                .setSubject(userId)
                 .setExpiration(refreshTokenExpiresIn)
                 .signWith(key, SignatureAlgorithm.HS256)
                 .compact();
 
         return TokenInfo.builder()
-                .userId(authentication.getName())
+                .userId(userId)
                 .grantType(BEARER_TYPE)
                 .accessToken(accessToken)
                 .refreshToken(refreshToken)
@@ -81,6 +83,7 @@ public class JwtTokenProvider {
         log.info("INTO getAuthentication");
         // 토큰 복호화
         Claims claims = parseClaims(token);
+        log.info("claims : {} ", claims.get(AUTHORITIES_KEY));
 
         if (claims.get(AUTHORITIES_KEY) == null || "".equals(claims.get(AUTHORITIES_KEY))) {
             throw new RuntimeException("권한 정보가 없는 토큰입니다.");
@@ -97,7 +100,7 @@ public class JwtTokenProvider {
         log.info("claims.getsubject {} " , claims.getSubject());
         // UserDetails 객체를 만들어서 Authentication 리턴
         UserDetails principal = new User(claims.getSubject(), "", authorities);
-        return new UsernamePasswordAuthenticationToken(principal, "", authorities);
+        return new UsernamePasswordAuthenticationToken(principal, token, authorities);
     }
 
     // 토큰 정보를 검증하는 메서드
@@ -129,17 +132,17 @@ public class JwtTokenProvider {
         return null;
     }
 
-    private Claims parseClaims(String accessToken) {
+    private Claims parseClaims(String token) {
         try {
-            return Jwts.parserBuilder().setSigningKey(key).build().parseClaimsJws(accessToken).getBody();
+            return Jwts.parserBuilder().setSigningKey(key).build().parseClaimsJws(token).getBody();
         } catch (ExpiredJwtException e) {
             return e.getClaims();
         }
     }
 
-    public Long getExpiration(String accessToken) {
+    public Long getExpiration(String token) {
         // accessToken 남은 유효시간
-        Date expiration = Jwts.parserBuilder().setSigningKey(key).build().parseClaimsJws(accessToken).getBody().getExpiration();
+        Date expiration = Jwts.parserBuilder().setSigningKey(key).build().parseClaimsJws(token).getBody().getExpiration();
         // 현재 시간
         Long now = new Date().getTime();
         return (expiration.getTime() - now);
@@ -151,11 +154,16 @@ public class JwtTokenProvider {
 		}
 		String userId = null;
         Claims claims = parseClaims(token);
+        log.info("claims {} ", claims);
         if(claims != null) {
             userId = (String)claims.get("sub");
         }
         return userId;
 	}
+
+    public Boolean matchRefreshToken(String refreshToken, String storedRefreshToken) {
+        return storedRefreshToken.equals(refreshToken) ? true : false;
+    }
 
 //    public void validateRefreshToken(String token){
 //        try {
@@ -173,7 +181,7 @@ public class JwtTokenProvider {
 
     public TokenInfo recreationAccessToken(String userId){
         log.info("recreationAccessToken()");
-        Date accessTokenExpiresIn = new Date(now + ACCESS_TOKEN_EXPIRE_TIME);
+        Date accessTokenExpiresIn = new Date((new Date()).getTime() + ACCESS_TOKEN_EXPIRE_TIME);
         // 권한가져오기 @@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@
         String authorities = "M";
 
@@ -186,7 +194,7 @@ public class JwtTokenProvider {
                 .compact();
 
         // Refresh Token 재생성
-        Date refreshTokenExpiresIn = new Date(now + REFRESH_TOKEN_EXPIRE_TIME);
+        Date refreshTokenExpiresIn = new Date((new Date()).getTime() + REFRESH_TOKEN_EXPIRE_TIME);
         String refreshToken = Jwts.builder()
                 .setExpiration(refreshTokenExpiresIn)
                 .signWith(key, SignatureAlgorithm.HS256)
@@ -201,14 +209,25 @@ public class JwtTokenProvider {
             .rtkExpirationTime(REFRESH_TOKEN_EXPIRE_TIME)
             .build();
     }
+
+    // 어세스 토큰 헤더 설정
+    public void setHeaderAccessToken(HttpServletResponse response, String accessToken) {
+        response.setHeader("authorization", "bearer "+ accessToken);
+    }
+
+    // 리프레시 토큰 헤더 설정
+    public void setHeaderRefreshToken(HttpServletResponse response, String refreshToken) {
+        response.setHeader("refreshToken", "bearer "+ refreshToken);
+    }
+
+
     public void insertRedis(TokenInfo tokenInfo, String connectChannel) {
         log.info("insertRedis()");
         Map<String, Object> map = new HashMap<>();
-        Date rtkExpiredDate = new Date(now + tokenInfo.getRtkExpirationTime());
-
+        Date rtkExpiredDate = new Date((new Date()).getTime() + tokenInfo.getRtkExpirationTime());
         map.put("userId", tokenInfo.getUserId());
         map.put("refreshToken", tokenInfo.getRefreshToken());
-        map.put("rtkExpirationTime", tokenInfo.getRtkExpirationTime().toString()) ;
+        map.put("rtkExpirationTime", String.valueOf((tokenInfo.getRtkExpirationTime() / 1000)) ) ;
         map.put("rtkExpirationDate", rtkExpiredDate.toString());
         map.put("userIp", "123.123.123.123");
 

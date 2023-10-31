@@ -1,30 +1,21 @@
 package com.example.redistest.config;
 
 import com.example.redistest.common.ConstDef;
-import com.example.redistest.exception.ApiException;
-import com.example.redistest.exception.JwtTokenException;
-import com.example.redistest.util.StringUtil;
-import io.jsonwebtoken.ExpiredJwtException;
+import com.example.redistest.entity.TokenInfo;
 import io.jsonwebtoken.JwtException;
-import io.jsonwebtoken.security.SignatureException;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.data.redis.RedisConnectionFailureException;
 import org.springframework.data.redis.core.RedisTemplate;
 import org.springframework.security.core.Authentication;
 import org.springframework.security.core.context.SecurityContextHolder;
-import org.springframework.util.ObjectUtils;
 import org.springframework.web.filter.OncePerRequestFilter;
 
 import javax.servlet.FilterChain;
 import javax.servlet.ServletException;
-import javax.servlet.ServletRequest;
-import javax.servlet.ServletResponse;
 import javax.servlet.http.HttpServletRequest;
 import javax.servlet.http.HttpServletResponse;
 import java.io.IOException;
-
-import static com.example.redistest.entity.ExceptionEnum.USER_LOGIN_DUPLICATION;
 
 @Slf4j
 @RequiredArgsConstructor
@@ -40,12 +31,9 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
         log.info("@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@");
         log.info("INTO doFilter");
         // 1. Request Header 에서 JWT 토큰 추출
-        String token = jwtTokenProvider.resolveToken(request, ConstDef.ACCESS_AUTHORIZATION_HEADER);
-        String connectChannel = request.getParameter("connectChannel");
-        String userId = request.getParameter("userId");
-        log.info("token {} " , token);
-        log.info("connectChannel {} " , connectChannel);
-
+        String atk = jwtTokenProvider.resolveToken(request, ConstDef.ACCESS_AUTHORIZATION_HEADER);
+        String rtk = jwtTokenProvider.resolveToken(request, ConstDef.REFRESH_AUTHORIZATION_HEADER);
+        log.info("atk : {} " , atk);
         // Redis 에 해당 accessToken logout 여부 확인
         // 2. validateToken 으로 토큰 유효성 검사
         try {
@@ -60,10 +48,11 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
 //                    throw new ApiException(USER_LOGIN_DUPLICATION);
 //                }
 //            }
-            if (token != null && jwtTokenProvider.validateToken(token)) {
-                // 토큰이 유효할 경우 토큰에서 Authentication 객체를 가지고 와서 SecurityContext 에 저장
-                Authentication authentication = jwtTokenProvider.getAuthentication(token);
+            if(atk != null && jwtTokenProvider.validateToken(atk)) {
+                Authentication authentication = jwtTokenProvider.getAuthentication(atk);
                 SecurityContextHolder.getContext().setAuthentication(authentication);
+            } else if(atk == null || !jwtTokenProvider.validateToken(atk)) {
+                 SecurityContextHolder.clearContext();
             }
         } catch(JwtException e) {
             throw new JwtException("Invaild Token");

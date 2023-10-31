@@ -2,11 +2,8 @@ package com.example.redistest.config;
 
 import com.example.redistest.entity.ApiResponseResult;
 import com.example.redistest.exception.ApiException;
-import com.example.redistest.exception.JwtTokenException;
 import com.example.redistest.util.Response;
 import com.fasterxml.jackson.databind.ObjectMapper;
-import io.jsonwebtoken.ExpiredJwtException;
-import io.jsonwebtoken.JwtException;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.HttpStatus;

@@ -48,12 +48,7 @@ public class AuthController {
         // 1. Login ID/PW 를 기반으로 Authentication 객체 생성
         // 이때 authentication 는 인증 여부를 확인하는 authenticated 값이 false
         log.info("login : {} " , login);
-        String connectChannel = request.getParameter("connectChannel");
-
         UsernamePasswordAuthenticationToken authenticationToken = login.toAuthentication();
-
-
-
         log.info("authenticationToken : {} " , authenticationToken);
 
         // 2. 실제 검증 (사용자 비밀번호 체크)이 이루어지는 부분
@@ -70,36 +65,48 @@ public class AuthController {
         log.info("authentication : {} " , authentication);
         if(checkRedis(login)) {
             // 3. 인증 정보를 기반으로 JWT 토큰 생성
-            TokenInfo tokenInfo = jwtTokenProvider.generateToken(authentication);
+            TokenInfo tokenInfo = jwtTokenProvider.generateToken(authentication.getName());
             log.info("tokenInfo : {} " , tokenInfo);
-            log.info("connectChannel : {} " , connectChannel);
 
-            jwtTokenProvider.insertRedis(tokenInfo, connectChannel);
+            jwtTokenProvider.insertRedis(tokenInfo, login.getConnectChannel());
             return response.success(tokenInfo, "로그인에 성공했습니다.", HttpStatus.OK);
         }
         return response.failed("오류 발생. 관리자에게 문의바랍니다.", HttpStatus.INTERNAL_SERVER_ERROR);
     }
 
     @GetMapping("/reissue-access")
-    public ResponseEntity<?> getAccessToken(HttpServletRequest req) {
-        String token = jwtTokenProvider.resolveToken(req, ConstDef.REFRESH_AUTHORIZATION_HEADER);
+    public ResponseEntity<?> reissueToken(HttpServletRequest req) {
+        String refreshToken = jwtTokenProvider.resolveToken(req, ConstDef.REFRESH_AUTHORIZATION_HEADER);
         String connectChannel = req.getParameter("connectChannel");
-        log.info("reissu token : {} ", token);
-        String userId = jwtTokenProvider.getUserIdFromJWT(token);
+        log.info("reissu token : {} ", refreshToken);
+        String userId = jwtTokenProvider.getUserIdFromJWT(refreshToken);
         String redisUserKey = connectChannel + ConstDef.REDIS_KEY_PREFIX + userId;
         log.info("redisUserKey : {}", redisUserKey);
 
-        String refreshToken = (String) redisTemplate.opsForHash().get(redisUserKey, "refreshToken");
-        //RTK 만료 다시 로그인 필요
-        if (StringUtil.isEmpty(refreshToken)) {
+        String storedRefreshToken = (String) redisTemplate.opsForHash().get(redisUserKey, "refreshToken");
+
+        if (StringUtil.isEmpty(storedRefreshToken)) {
+            //RTK 만료 및 비정상일 경우 : 다시 로그인 필요
             SecurityContextHolder.clearContext();
             throw new ApiException(REDIS_USER_NOT_EXIST);
         }
 
-        if (token != null && jwtTokenProvider.validateToken(token)) {
-
+        if (!jwtTokenProvider.matchRefreshToken(refreshToken, storedRefreshToken)) {
+            SecurityContextHolder.clearContext();
+            throw new ApiException(REDIS_USER_NOT_EXIST);
         }
-        return response.success("test!!", HttpStatus.OK);
+
+        if (refreshToken != null && jwtTokenProvider.validateToken(refreshToken)) {
+            //ATK, RTK 재발급
+            TokenInfo tokenInfo = jwtTokenProvider.generateToken(userId);
+            Authentication authentication = jwtTokenProvider.getAuthentication(tokenInfo.getAccessToken());
+
+            SecurityContextHolder.getContext().setAuthentication(authentication);
+            redisTemplate.delete(redisUserKey);
+            jwtTokenProvider.insertRedis(tokenInfo, connectChannel);
+            return response.success(tokenInfo, "토큰 재발급", HttpStatus.OK);
+        }
+        return response.failed("오류 발생. 관리자에게 문의바랍니다.", HttpStatus.INTERNAL_SERVER_ERROR);
     }
 
     @GetMapping("/token-test")
