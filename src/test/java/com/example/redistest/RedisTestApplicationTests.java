@@ -18,10 +18,10 @@ class RedisTestApplicationTests {
 	@Autowired
 	UserAccessRepository userAccessRepository;
 
-	@BeforeEach
-	void clear() {
-		userAccessRepository.deleteAll();
-	}
+//	@BeforeEach
+//	void clear() {
+//		userAccessRepository.deleteAll();
+//	}
 
 	@DisplayName("save")
 	@Test
@@ -36,7 +36,7 @@ class RedisTestApplicationTests {
 		Optional<UserAccessToken> userToken = userAccessRepository.findByUserName(userName);
 
 		assertAll(
-				() -> assertEquals(userName, userToken.getUserName()),
+				() -> assertEquals(userName, userToken()),
 				() -> assertEquals(userHome, userToken.getUserHome()),
 				() -> assertEquals(remainMs/1000, userToken.getExpiration())
 		);
